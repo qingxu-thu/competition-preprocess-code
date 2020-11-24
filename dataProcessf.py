@@ -52,22 +52,61 @@ def get_feature(df):
 
 
 def get_link_feature(link_path,connect_path):
+    link_attr = {}
     f = os.open(link_path)
+    for line in f.readlines():
+        attr = line.spilt(" ")
+        attr = [float(a) for a in attr]
+        if len(attr)<9:
+            attr.append(0)
+        link_attr[attr[0]]=attr[1:-1]
+    f = os.open(connect_path)
+    link_connection = {}
+    for line in f.readlines():
+        low = line.spilt(" ")
+        low = [int(a) for a in low]
+        link_connection[low[0]] = low[1:-1]
+    inv_link = {}
+    for k, v in link_connection.iteritems():
+        inv_link[v] = inv_map.get(v, [])
+        inv_link[v].append(k)
+    return link_attr, link_connection, inv_link
+
+
+def get_attr_mean(link_id, link_attr, link_connection, inv_link):
+    if link_id in link_connection:
+        for i, low in enumerate(link_connection[link_id]):
+            if i == 0:
+                attr = np.array(low)
+            else:
+                attr += np.array(low)
+        attr = attr/(i+1)
+    else:
+        attr = np.zeros((9))
+    if link_id in inv_link:
+        for i, low in enumerate(inv_link[link_id]):
+            if i == 0:
+                attr2 = np.array(low)
+            else:
+                attr2 += np.array(low)
+        attr2 = attr/(i+1)
+    else:
+        attr2 = np.zeros((9))
+    return np.concatenate((attr,attr2),axis=0)
+
+
+def get_link_feature(df, ink_attr, link_connection, inv_link, combined_feature):
+    i = 0
+    for link_id in df['linkid']:
+        link_id = int(link_id)
+        if i == 0:
+            feature = get_attr_mean(link_id, link_attr, link_connection, inv_link)
+        else: 
+            feature = np.concatenate((feature,get_attr_mean(link_id, link_attr, link_connection, inv_link)),axis = 1)
+    total_feature = np.concatenate((combined_feature,feature),axis=0)
+    return total_feature
+
     
-
-    connection_matrix = get_connection_matrix(connect_feature)
-
-
-def dict_map(df):
-
-
-
-
-def get_connection_matrix(df):
-    for item in df:
-        for 
-
-
 def build_model(input_size,layers):
     model.Sequential()
     a = int(log(input_size))
@@ -77,8 +116,38 @@ def build_model(input_size,layers):
             model.add(Dropout(0.2))
         else:
             model.add(Dense(math.pow(2,a-i),activation='relu'))
-            model.add(Dropout(0.2)) 
+            model.add(Dropout(0.2))
+    model.add(Dense(3, activation='softmax'))
     model.summary()
-    model.compile(loss='mse',optimizer=Adam())
+    model.compile(loss='categorical_crossentropy',optimizer=Adam())
     return model
 
+class Metrics(Callback):
+    def on_train_begin(self, logs={}):
+        self.val_f1s = []
+        self.val_recalls = []
+        self.val_precisions = []
+ 
+    def on_epoch_end(self, epoch, logs={}):
+        val_predict = (np.asarray(self.model.predict(self.model.validation_data[0]))).round()
+        val_targ = self.model.validation_data[1]
+        _val_f1 = f1_score(val_targ, val_predict, average='None')
+        _val_f1 = _val_f1[0]*0.2+_val_f1[1]*0.2+_val_f1[2]*0.6
+        _val_recall = recall_score(val_targ, val_predict)
+        _val_precision = precision_score(val_targ, val_predict)
+        self.val_f1s.append(_val_f1)
+        self.val_recalls.append(_val_recall)
+        self.val_precisions.append(_val_precision)
+        print(" — val_f1: %f — val_precision: %f — val_recall: %f" % (_val_f1, _val_precision, _val_recall))
+        return
+ 
+metrics = Metrics()
+
+def model_train(model,x_train,y_train,batch_size,epochs,x_test,y_test, metrics):
+    history = model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs, verbose=1,validation_data=(x_test, y_test),callbacks=[metrics])
+    score = model.evaluate(x_test, y_test, verbose=0)
+    print("Test loss",score[0])
+
+
+def multiple_file_read(path,num):
+    
