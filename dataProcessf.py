@@ -141,7 +141,9 @@ class Metrics(Callback):
         print(" — val_f1: %f — val_precision: %f — val_recall: %f" % (_val_f1, _val_precision, _val_recall))
         return
  
+ 
 metrics = Metrics()
+
 
 def model_train(model,x_train,y_train,batch_size,epochs,x_test,y_test, metrics):
     history = model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs, verbose=1,validation_data=(x_test, y_test),callbacks=[metrics])
@@ -149,5 +151,18 @@ def model_train(model,x_train,y_train,batch_size,epochs,x_test,y_test, metrics):
     print("Test loss",score[0])
 
 
-def multiple_file_read(path,num):
-    
+def multiple_file_read(filePath,num,link_attr, link_connection, inv_link):
+    path_list = os.listdir(filePath)
+    for i in range(num):
+        print(i)
+        path = path_list[i]
+        df = txtread(path)
+        if i == 0:
+            combined_feature, label = get_feature(path)
+            x_train = get_link_feature(df, ink_attr, link_connection, inv_link, combined_feature)
+        if i == 0:
+            combined_feature, a = get_feature(path)
+            label = np.concatenate((label,a),axis=0)
+            total_feature_a = get_link_feature(df, ink_attr, link_connection, inv_link, combined_feature)
+            x_train = np.concatenate((x_train,total_feature_a),axis=0)
+    return x_train,label
