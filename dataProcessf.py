@@ -4,7 +4,11 @@ import numpy as np
 import joblib
 import keras
 from sklearn.metrics import f1_score
+import math
+from keras.models import Sequential
+from keras.layers import Dense, Dropout
 
+from keras.optimizers import Adam
 
 def txtread(path):
     df_0702 = pd.read_csv(f'train/traffic/{path}', sep=';', names=['linkid_' 'label_' 'current_slice_id_' 'future_slice_id', 'recent_feature', 'history_feature1', 'history_feature2', 'history_feature3', 'history_feature4'])
@@ -48,8 +52,9 @@ def get_feature(df):
 
 
 def get_link_feature(link_path,connect_path):
-    link_feature = pd.read_csv(f'../{link_path}', sep=';', names=[])
-    connect_feature = pd.read_csv()
+    f = os.open(link_path)
+    
+
     connection_matrix = get_connection_matrix(connect_feature)
 
 
@@ -63,4 +68,17 @@ def get_connection_matrix(df):
         for 
 
 
-def 
+def build_model(input_size,layers):
+    model.Sequential()
+    a = int(log(input_size))
+    for i in range(layers):
+        if i==0:
+            model.add(Dense(math.pow(2,a),input_shape=(input_size,),activation='relu'))
+            model.add(Dropout(0.2))
+        else:
+            model.add(Dense(math.pow(2,a-i),activation='relu'))
+            model.add(Dropout(0.2)) 
+    model.summary()
+    model.compile(loss='mse',optimizer=Adam())
+    return model
+
