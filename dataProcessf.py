@@ -2,6 +2,7 @@ import pandas as pd
 import os
 import numpy as np
 import joblib
+import keras
 from sklearn.metrics import f1_score
 
 
@@ -45,3 +46,21 @@ def get_feature(df):
     
     return combined_feature, df.label
 
+
+def get_link_feature(link_path,connect_path):
+    link_feature = pd.read_csv(f'../{link_path}', sep=';', names=[])
+    connect_feature = pd.read_csv()
+    connection_matrix = get_connection_matrix(connect_feature)
+
+
+def dict_map(df):
+
+
+
+
+def get_connection_matrix(df):
+    for item in df:
+        for 
+
+
+def 
