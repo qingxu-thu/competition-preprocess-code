@@ -59,13 +59,13 @@ def get_link_feature(link_path,connect_path):
         attr = [float(a) for a in attr]
         if len(attr)<9:
             attr.append(0)
-        link_attr[attr[0]]=attr[1:-1]
+        link_attr[attr[0]]=attr[1:]
     f = os.open(connect_path)
     link_connection = {}
     for line in f.readlines():
         low = line.spilt(" ")
         low = [int(a) for a in low]
-        link_connection[low[0]] = low[1:-1]
+        link_connection[low[0]] = low[1:]
     inv_link = {}
     for k, v in link_connection.iteritems():
         inv_link[v] = inv_map.get(v, [])
@@ -108,7 +108,7 @@ def get_link_feature(df, ink_attr, link_connection, inv_link, combined_feature):
 
     
 def build_model(input_size,layers):
-    model.Sequential()
+    model = Sequential()
     a = int(log(input_size))
     for i in range(layers):
         if i==0:
@@ -121,6 +121,7 @@ def build_model(input_size,layers):
     model.summary()
     model.compile(loss='categorical_crossentropy',optimizer=Adam())
     return model
+
 
 class Metrics(Callback):
     def on_train_begin(self, logs={}):
@@ -166,3 +167,17 @@ def multiple_file_read(filePath,num,link_attr, link_connection, inv_link):
             total_feature_a = get_link_feature(df, ink_attr, link_connection, inv_link, combined_feature)
             x_train = np.concatenate((x_train,total_feature_a),axis=0)
     return x_train,label
+
+
+link_path = '../20201012150828attr.txt'
+connect_path = '../20201012151101topo.txt'
+link_attr, link_connection, inv_link = get_link_feature(link_path,connect_path)
+num = 3
+filePath = '../traffic-fix (1)/traffic/'
+x_train,label = multiple_file_read(filePath,num,link_attr, link_connection, inv_link)
+train_num = int(x_train.shape[0]/10)
+model = build_model(x_train.shape[1],4)
+batch_size = 64
+epochs = 20
+model_train(model,x_train[:train_num,:],label[:train_num,:],batch_size,epochs,x_train[train_num:,:],label[train_num:,:], metrics)
+
