@@ -2,13 +2,14 @@ import pandas as pd
 import os
 import numpy as np
 import joblib
-import keras
+from tensorflow import keras
 from sklearn.metrics import f1_score
 import math
-from keras.models import Sequential
-from keras.layers import Dense, Dropout
 
-from keras.optimizers import Adam
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout
+
+from tensorflow.keras.optimizers import Adam
 from collections import defaultdict
 
 
@@ -93,7 +94,7 @@ def get_attr_mean(link_id, link_attr, link_connection, inv_link):
                 attr += np.array(attr_low)
         attr = attr/(i+1)
     else:
-        attr = np.zeros((9))
+        attr = np.zeros((8))
     if link_id in inv_link:
         for i, low in enumerate(inv_link[link_id]):
             attr_low = link_attr[low]
@@ -103,11 +104,37 @@ def get_attr_mean(link_id, link_attr, link_connection, inv_link):
                 attr2 += np.array(attr_low)
         attr2 = attr/(i+1)
     else:
-        attr2 = np.zeros((9))
-    return np.concatenate((attr,attr2),axis=0).reshape([1,-1])
+        attr2 = np.zeros((8))
+    return np.concatenate((attr,attr2),axis=0)
 
 
-def get_link_feature(df, ink_attr, link_connection, inv_link, combined_feature):
+def save_link_feature(link_attr, link_connection, inv_link):
+    i = 0
+    feature = np.zeros((len(link_attr),16))
+    for key,value in enumerate(link_attr):
+        #print(key)
+        link_id = int(key)
+        #feature = get_attr_mean(link_id, link_attr, link_connection, inv_link)
+        #if i == 0:
+        #    feature = get_attr_mean(link_id, link_attr, link_connection, inv_link)        
+        #else: 
+        #    feature = np.concatenate((feature,get_attr_mean(link_id, link_attr, link_connection, inv_link)),axis=1)
+        
+        feature[i] = get_attr_mean(link_id, link_attr, link_connection, inv_link)
+        i+=1
+    np.save('./link_feature.npy',feature)
+    return feature
+
+def derive_link_feature(path):
+    return np.load(path)
+
+def get_link_feature(df, feature,combined_feature):
+    link_id = df['linkid']
+    print(combined_feature.shape,feature[link_id,:].shape)
+    return np.concatenate((combined_feature,feature[link_id,:]),axis=1)
+
+'''
+def get_link_feature(df, link_attr, link_connection, inv_link, combined_feature):
     i = 0
     for link_id in df['linkid']:
         link_id = int(link_id)
@@ -120,11 +147,11 @@ def get_link_feature(df, ink_attr, link_connection, inv_link, combined_feature):
     print(combined_feature.shape,feature.shape)
     total_feature = np.concatenate((combined_feature,feature),axis=0)
     return total_feature
-
+'''
     
 def build_model(input_size,layers):
     model = Sequential()
-    a = int(log(input_size))
+    a = int(math.log(input_size))
     for i in range(layers):
         if i==0:
             model.add(Dense(math.pow(2,a),input_shape=(input_size,),activation='relu'))
@@ -134,32 +161,38 @@ def build_model(input_size,layers):
             model.add(Dropout(0.2))
     model.add(Dense(3, activation='softmax'))
     model.summary()
-    model.compile(loss='categorical_crossentropy',optimizer=Adam())
+    model.compile(loss='sparse_categorical_crossentropy',optimizer=Adam(learning_rate=0.001))
     return model
 
 
 class Metrics(keras.callbacks.Callback):
+    def __init__(self, val_data, batch_size = 64):
+        super().__init__()
+        self.validation_data = val_data
+        self.batch_size = batch_size
+
     def on_train_begin(self, logs={}):
         self.val_f1s = []
-        self.val_recalls = []
-        self.val_precisions = []
  
     def on_epoch_end(self, epoch, logs={}):
-        val_predict = (np.asarray(self.model.predict(self.model.validation_data[0]))).round()
-        val_targ = self.model.validation_data[1]
-        _val_f1 = f1_score(val_targ, val_predict, average='None')
+        print(self.validation_data)
+        val_predict = (np.asarray(self.model.predict(self.validation_data[0])))
+        #print(val_predict)
+        val_predict = np.argmax(val_predict,axis=1)
+        print(val_predict.shape)
+        val_targ = self.validation_data[1]
+        #print(val_targ[val_targ==1],val_targ[val_targ==2])
+        _val_f1 = f1_score(val_targ, val_predict, average=None)
+        #print(_val_f1)
         _val_f1 = _val_f1[0]*0.2+_val_f1[1]*0.2+_val_f1[2]*0.6
-        _val_recall = recall_score(val_targ, val_predict)
-        _val_precision = precision_score(val_targ, val_predict)
         self.val_f1s.append(_val_f1)
-        self.val_recalls.append(_val_recall)
-        self.val_precisions.append(_val_precision)
-        print(" — val_f1: %f — val_precision: %f — val_recall: %f" % (_val_f1, _val_precision, _val_recall))
+        print(" — val_f1: %f " % (_val_f1))
         return
  
 
 def model_train(model,x_train,y_train,batch_size,epochs,x_test,y_test, metrics):
-    history = model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs, verbose=1,validation_data=(x_test, y_test),callbacks=[metrics])
+    #history = model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs, verbose=1,validation_data=(x_test, y_test),callbacks=[metrics])
+    history = model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs, verbose=1,validation_split=0.1,callbacks=[metrics])
     score = model.evaluate(x_test, y_test, verbose=0)
     print("Test loss",score[0])
 
@@ -172,11 +205,15 @@ def multiple_file_read(filePath,num,link_attr, link_connection, inv_link):
         df = txtread(filePath+path)
         if i == 0:
             combined_feature, label = get_feature(df)
-            x_train = get_link_feature(df, link_attr, link_connection, inv_link, combined_feature)
-        if i == 0:
+            label = np.array(label)
+            #feature = save_link_feature(link_attr, link_connection, inv_link)
+            feature = derive_link_feature("./link_feature.npy")
+            print(feature.shape)
+            x_train = get_link_feature(df, feature, combined_feature)
+        else:
             combined_feature, a = get_feature(df)
             label = np.concatenate((label,a),axis=0)
-            total_feature_a = get_link_feature(df, ink_attr, link_connection, inv_link, combined_feature)
+            total_feature_a = get_link_feature(df, feature, combined_feature)
             x_train = np.concatenate((x_train,total_feature_a),axis=0)
     return x_train,label
 
@@ -184,13 +221,19 @@ def multiple_file_read(filePath,num,link_attr, link_connection, inv_link):
 link_path = '../20201012150828attr.txt'
 connect_path = '../20201012151101topo.txt'
 link_attr, link_connection, inv_link = read_link_feature(link_path,connect_path)
-num = 3
+num = 5
 filePath = '../traffic-fix (1)/traffic/'
 x_train,label = multiple_file_read(filePath,num,link_attr, link_connection, inv_link)
-train_num = int(x_train.shape[0]/10)
+label[label==1]=0
+label[label==2]=1
+label[label==3]=2
+label[label==4]=2
+index = np.array([i for i in range(x_train.shape[0])])
+np.random.shuffle(index)
+train_num = int(x_train.shape[0]*9/10)
 model = build_model(x_train.shape[1],4)
 batch_size = 64
 epochs = 20
-metrics = Metrics()
-model_train(model,x_train[:train_num,:],label[:train_num,:],batch_size,epochs,x_train[train_num:,:],label[train_num:,:], metrics)
+metrics = Metrics((x_train[index[train_num:train_num+int(train_num/9)]],label[index[train_num:train_num+int(train_num/9)]]))
+model_train(model,x_train[index[:train_num]],label[index[:train_num]],batch_size,epochs,x_train[index[train_num:]],label[index[train_num:]], metrics)
 
