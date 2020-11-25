@@ -9,9 +9,11 @@ from keras.models import Sequential
 from keras.layers import Dense, Dropout
 
 from keras.optimizers import Adam
+from collections import defaultdict
+
 
 def txtread(path):
-    df_0702 = pd.read_csv(f'train/traffic/{path}', sep=';', names=['linkid_' 'label_' 'current_slice_id_' 'future_slice_id', 'recent_feature', 'history_feature1', 'history_feature2', 'history_feature3', 'history_feature4'])
+    df_0702 = pd.read_csv(f'{path}', sep=';', names=['linkid_' 'label_' 'current_slice_id_' 'future_slice_id', 'recent_feature', 'history_feature1', 'history_feature2', 'history_feature3', 'history_feature4'])
     df_test = pd.DataFrame(columns=['linkid', 'label', 'current_slice_id', 'future_slice_id'])
     df_test[['linkid', 'label', 'current_slice_id', 'future_slice_id']] = df_0702.iloc[:, 0].str.split(' ', expand=True)
     df_test = df_test.astype('int')
@@ -47,52 +49,62 @@ def get_feature(df):
     history_feature4 = get_split(history_feature4)
     
     combined_feature = np.concatenate([recent_feature, history_feature1, history_feature2, history_feature3, history_feature4], axis=2)
-    
+    combined_feature = combined_feature.reshape([-1,100])
     return combined_feature, df.label
 
 
-def get_link_feature(link_path,connect_path):
+def read_link_feature(link_path,connect_path):
     link_attr = {}
-    f = os.open(link_path)
+    f = open(link_path,'r')
     for line in f.readlines():
-        attr = line.spilt(" ")
+        #print(line)
+        attr = line.split("\t")
         attr = [float(a) for a in attr]
         if len(attr)<9:
             attr.append(0)
-        link_attr[attr[0]]=attr[1:]
-    f = os.open(connect_path)
+        link_attr[int(attr[0])]=attr[1:]
+    f = open(connect_path,'r')
     link_connection = {}
     for line in f.readlines():
-        low = line.spilt(" ")
+        low = line.split("\t")
+        key = int(low[0])
+        low = low[1]
+        low = low.split(",")
         low = [int(a) for a in low]
-        link_connection[low[0]] = low[1:]
-    inv_link = {}
-    for k, v in link_connection.iteritems():
-        inv_link[v] = inv_map.get(v, [])
-        inv_link[v].append(k)
+        link_connection[key] = low[:]
+    
+    inv_link = defaultdict(list)
+    for key, value in link_connection.items():
+        for id_v in value:
+            inv_link[id_v].append(key)
+    
     return link_attr, link_connection, inv_link
 
 
 def get_attr_mean(link_id, link_attr, link_connection, inv_link):
     if link_id in link_connection:
+        #print(link_connection[link_id])
         for i, low in enumerate(link_connection[link_id]):
+            #print(low,link_attr[low])
+            attr_low = link_attr[low]
             if i == 0:
-                attr = np.array(low)
+                attr = np.array(attr_low)
             else:
-                attr += np.array(low)
+                attr += np.array(attr_low)
         attr = attr/(i+1)
     else:
         attr = np.zeros((9))
     if link_id in inv_link:
         for i, low in enumerate(inv_link[link_id]):
+            attr_low = link_attr[low]
             if i == 0:
-                attr2 = np.array(low)
+                attr2 = np.array(attr_low)
             else:
-                attr2 += np.array(low)
+                attr2 += np.array(attr_low)
         attr2 = attr/(i+1)
     else:
         attr2 = np.zeros((9))
-    return np.concatenate((attr,attr2),axis=0)
+    return np.concatenate((attr,attr2),axis=0).reshape([1,-1])
 
 
 def get_link_feature(df, ink_attr, link_connection, inv_link, combined_feature):
@@ -102,7 +114,10 @@ def get_link_feature(df, ink_attr, link_connection, inv_link, combined_feature):
         if i == 0:
             feature = get_attr_mean(link_id, link_attr, link_connection, inv_link)
         else: 
-            feature = np.concatenate((feature,get_attr_mean(link_id, link_attr, link_connection, inv_link)),axis = 1)
+            feature = np.concatenate((feature,get_attr_mean(link_id, link_attr, link_connection, inv_link)),axis=1)
+        i+=1
+        print(i)
+    print(combined_feature.shape,feature.shape)
     total_feature = np.concatenate((combined_feature,feature),axis=0)
     return total_feature
 
@@ -123,7 +138,7 @@ def build_model(input_size,layers):
     return model
 
 
-class Metrics(Callback):
+class Metrics(keras.callbacks.Callback):
     def on_train_begin(self, logs={}):
         self.val_f1s = []
         self.val_recalls = []
@@ -142,9 +157,6 @@ class Metrics(Callback):
         print(" — val_f1: %f — val_precision: %f — val_recall: %f" % (_val_f1, _val_precision, _val_recall))
         return
  
- 
-metrics = Metrics()
-
 
 def model_train(model,x_train,y_train,batch_size,epochs,x_test,y_test, metrics):
     history = model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs, verbose=1,validation_data=(x_test, y_test),callbacks=[metrics])
@@ -157,12 +169,12 @@ def multiple_file_read(filePath,num,link_attr, link_connection, inv_link):
     for i in range(num):
         print(i)
         path = path_list[i]
-        df = txtread(path)
+        df = txtread(filePath+path)
         if i == 0:
-            combined_feature, label = get_feature(path)
-            x_train = get_link_feature(df, ink_attr, link_connection, inv_link, combined_feature)
+            combined_feature, label = get_feature(df)
+            x_train = get_link_feature(df, link_attr, link_connection, inv_link, combined_feature)
         if i == 0:
-            combined_feature, a = get_feature(path)
+            combined_feature, a = get_feature(df)
             label = np.concatenate((label,a),axis=0)
             total_feature_a = get_link_feature(df, ink_attr, link_connection, inv_link, combined_feature)
             x_train = np.concatenate((x_train,total_feature_a),axis=0)
@@ -171,7 +183,7 @@ def multiple_file_read(filePath,num,link_attr, link_connection, inv_link):
 
 link_path = '../20201012150828attr.txt'
 connect_path = '../20201012151101topo.txt'
-link_attr, link_connection, inv_link = get_link_feature(link_path,connect_path)
+link_attr, link_connection, inv_link = read_link_feature(link_path,connect_path)
 num = 3
 filePath = '../traffic-fix (1)/traffic/'
 x_train,label = multiple_file_read(filePath,num,link_attr, link_connection, inv_link)
@@ -179,5 +191,6 @@ train_num = int(x_train.shape[0]/10)
 model = build_model(x_train.shape[1],4)
 batch_size = 64
 epochs = 20
+metrics = Metrics()
 model_train(model,x_train[:train_num,:],label[:train_num,:],batch_size,epochs,x_train[train_num:,:],label[train_num:,:], metrics)
 
